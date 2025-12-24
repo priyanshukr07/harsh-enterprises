@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+  MANAGER
+}
+model User {
+  id        String         @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  email     String         @unique
+  password  String
+  role      Role           @default(USER)
+  products  Product[]
+  cart      Cart[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  addresses OrderAddress[]
+  orders    Order[]
+}
+
+model Product {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  description String
+  price       Float
+  mainImage   String
+  otherImages String[]
+  quantity    Int
+  sizes       String[]
+  colors      String[]
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id])
+
+  categories ProductCategory[] // many-to-many
+
+  cart   Cart[]
+  orders Order[]
+
+  threadAttributes   ThreadAttributes?
+  cocopeatAttributes CocopeatAttributes?
+  trayAttributes     TrayAttributes?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Category {
+  id   String @id @default(auto()) @map("_id") @db.ObjectId
+  name String
+
+  products ProductCategory[] // many-to-many
+}
+
+model ProductCategory {
+  id         String @id @default(auto()) @map("_id") @db.ObjectId
+  productId  String @db.ObjectId
+  categoryId String @db.ObjectId
+
+  product  Product  @relation(fields: [productId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
+}
+
+model ThreadAttributes {
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  productId String  @unique @db.ObjectId
+  product   Product @relation(fields: [productId], references: [id])
+
+  denier      String?
+  length      Float?
+  material    String?
+  plyCount    Int?
+  spoolWeight Float?
+  strength    Float?
+}
+
+model CocopeatAttributes {
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  productId String  @unique @db.ObjectId
+  product   Product @relation(fields: [productId], references: [id])
+
+  weight      Float?
+  ecLevel     String?
+  compression String?
+  moisture    Float?
+  ph          Float?
+  expansion   Float?
+  grade       String?
+}
+
+model TrayAttributes {
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  productId String  @unique @db.ObjectId
+  product   Product @relation(fields: [productId], references: [id])
+
+  cavities     Int?
+  cellVolume   Int?
+  trayMaterial String?
+  dimensions   String?
+  thickness    Float?
+  rows         Int?
+  columns      Int?
+}
+
+model Cart {
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String  @db.ObjectId
+  user      User    @relation(fields: [userId], references: [id])
+  productId String  @db.ObjectId
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int     @default(1)
+  color     String?
+  size      String?
+}
+
+model OrderAddress {
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String  @db.ObjectId
+  user      User    @relation(fields: [userId], references: [id])
+  firstName String
+  lastName  String
+  address   String
+  city      String
+  state     String
+  zip       String
+  order     Order[]
+}
+
+model Order {
+  id            String       @id @default(auto()) @map("_id") @db.ObjectId
+  quantity      Int
+  status        OrderStatus  @default(PENDING)
+  paymentMethod String       @default("Razorpay")
+  usersId       String       @db.ObjectId
+  user          User         @relation(fields: [usersId], references: [id])
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  Product       Product?     @relation(fields: [productId], references: [id])
+  productId     String?      @db.ObjectId
+  addressId     String       @db.ObjectId
+  address       OrderAddress @relation(fields: [addressId], references: [id])
+}
+
+enum OrderStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
