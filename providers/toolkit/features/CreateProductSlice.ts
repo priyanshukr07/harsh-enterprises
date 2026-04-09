@@ -1,111 +1,108 @@
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 import toast from "react-hot-toast";
 
-export interface ProductState {
-  name: string;
-  price: number;
-  description: string;
-  mainImage: string[];
-  otherImages: string[];
-  userId: string;
-  categories: string;
-  sizes?: string[];
-  colors?: string[];
-  
+export interface ThreadAttributes {
   denier?: string;
   length?: number;
   material?: string;
+  plyCount?: number;
+  spoolWeight?: number;
+  strength?: number;
+}
 
+export interface CocopeatAttributes {
   weight?: number;
   ecLevel?: string;
   compression?: string;
+  moisture?: number;
+  ph?: number;
+  expansion?: number;
+  grade?: string;
+}
 
+export interface TrayAttributes {
   cavities?: number;
   cellVolume?: number;
   trayMaterial?: string;
   dimensions?: string;
+  thickness?: number;
+  rows?: number;
+  columns?: number;
+}
+
+export interface ProductState {
+  name: string;
+  description: string;
+  price: number;
+  quantity: number;
+
+  mainImage: string;
+  otherImages: string[];
+
+  sizes: string[];
+  colors: string[];
+
+  userId: string;
+
+  // many-to-many
+  categories: string[]; // category IDs or names
+
+  // optional attribute blocks
+  threadAttributes?: ThreadAttributes;
+  cocopeatAttributes?: CocopeatAttributes;
+  trayAttributes?: TrayAttributes;
 }
 
 const initialState: ProductState = {
   name: "",
-  price: 0,
   description: "",
-  mainImage: [],
+  price: 0,
+  quantity: 1,
+  mainImage: "",
   otherImages: [],
-  userId: "",
-  categories: "",
   sizes: [],
   colors: [],
+  userId: "",
+  categories: [],
 };
 
+/* Async Thunk  */
 export const CreatePro = createAsyncThunk(
   "products/create",
   async (productData: ProductState, { rejectWithValue }) => {
     try {
-      const response = await fetch("/api/products/create-product", {
+      const res = await fetch("/api/products/create-product", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: productData?.name,
-          price: productData?.price,
-          description: productData?.description,
-          mainImage: productData?.mainImage,
-          otherImages: productData?.otherImages,
-          userId: productData?.userId,
-          categories: { name: productData.categories },
-          sizes: productData?.sizes,
-          colors: productData?.colors,
-
-          // NEW CATEGORY SPECIFIC ATTRIBUTES
-          denier: productData?.denier,
-          length: productData?.length,
-          material: productData?.material,
-
-          weight: productData?.weight,
-          ecLevel: productData?.ecLevel,
-          compression: productData?.compression,
-
-          cavities: productData?.cavities,
-          cellVolume: productData?.cellVolume,
-          trayMaterial: productData?.trayMaterial,
-          dimensions: productData?.dimensions,
-
-          quantity: 1,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(productData),
       });
 
-      if (!response.ok) throw new Error("Product creation failed");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Product creation failed");
 
-      const product = await response.json();
-
-      if (product.message === "Product created successfully") {
-        toast.success("Product created successfully");
-        return product;
-      }
-
-      return rejectWithValue(product.message || "Product creation failed");
+      toast.success("Product created successfully");
+      return data;
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Unknown error occurred";
+        error instanceof Error ? error.message : "Unexpected error occurred";
       toast.error(message);
       return rejectWithValue(message);
     }
   }
 );
 
+/*  Slice  */
 export const CreateProductSlice = createSlice({
   name: "product",
   initialState,
   reducers: {},
   extraReducers: (builder) => {
-    builder.addCase(CreatePro.fulfilled, (state, action) => {
+    builder.addCase(CreatePro.fulfilled, (_, action) => {
       return action.payload;
     });
 
-    builder.addCase(CreatePro.rejected, (state, action) => {
-      console.log(action.error.message);
+    builder.addCase(CreatePro.rejected, (_, action) => {
+      console.error("Create product failed:", action.payload);
     });
   },
 });

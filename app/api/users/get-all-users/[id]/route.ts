@@ -1,50 +1,88 @@
 import { prisma } from "@/db/db.config";
-import { client } from "@/lib/Redis";
-import { NextRequest, NextResponse } from "next/server";
+import { getCache, setCache } from "@/lib/cache";
+import { NextResponse } from "next/server";
 
-export async function GET(
-  request: NextRequest,
-  context: { params: Promise<{ id: string }> }
-) {
+/* ---------- Types ---------- */
+type SortBy = "createdAt" | "role" | "name" | "email";
+type SortOrder = "asc" | "desc";
+
+export const GET = async (req: Request) => {
   try {
-    const { id } = await context.params; // Next.js 16 requires awaiting params
+    const { searchParams } = new URL(req.url);
 
-    // Check Redis cache
-    const cachedUser = await client.get(`user:${id}`);
-    if (cachedUser) {
-      return NextResponse.json(JSON.parse(cachedUser), { status: 200 });
-    }
+    const page       = Math.max(1, Number(searchParams.get("page"))   || 1);
+    const limit      = Math.min(100, Math.max(1, Number(searchParams.get("limit")) || 10));
+    const search     = searchParams.get("search")    || "";
+    const role       = searchParams.get("role");
+    const sortBy     = (searchParams.get("sortBy")   || "createdAt") as SortBy;
+    const sortOrder  = (searchParams.get("sortOrder")|| "desc")      as SortOrder;
 
-    // Fetch from DB
-    const user = await prisma.user.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true,
-        orders: true,
-      },
-    });
+    const skip = (page - 1) * limit;
 
-    if (!user) {
+    /* ---------- Redis Cache ---------- */
+    const cacheKey = `users:${page}:${limit}:${search}:${role}:${sortBy}:${sortOrder}`;
+
+    const cached = await getCache(cacheKey);
+    if (cached) {
       return NextResponse.json(
-        { message: "No User Found" },
-        { status: 404 }
+        { ...JSON.parse(cached), source: "cache" },
+        { status: 200 }
       );
     }
 
-    // Cache for 30 seconds
-    await client.setex(`user:${id}`, 30, JSON.stringify(user));
+    /* ---------- Prisma Filters ---------- */
+    const where: any = {};
 
-    return NextResponse.json(user, { status: 200 });
+    if (search) {
+      where.OR = [
+        { name:  { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    const validRoles = ["admin", "user", "manager"];
+    if (role && validRoles.includes(role)) where.role = role;
+
+    /* ---------- Queries ---------- */
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder },
+        select: {
+          id:        true,
+          name:      true,
+          email:     true,
+          role:      true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.user.count({ where }),
+    ]);
+
+    const response = {
+      success:    true,
+      users,
+      total,
+      page,
+      limit,
+      totalPages:  Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPrevPage: page > 1,
+      source:      "db",
+    };
+
+    /* ---------- Cache Result (5 min TTL) ---------- */
+    await setCache(cacheKey, JSON.stringify(response), 300);
+
+    return NextResponse.json(response, { status: 200 });
   } catch (error) {
-    console.error("Failed to fetch user:", error);
+    console.error("[Users API] Failed to fetch users:", error);
     return NextResponse.json(
-      { message: "Internal Server Error" },
+      { success: false, message: "Internal Server Error" },
       { status: 500 }
     );
   }
-}
+};

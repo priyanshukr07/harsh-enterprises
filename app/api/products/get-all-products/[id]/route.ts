@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/db/db.config";
-import { client } from "@/lib/Redis";
+import { getCache, setCache } from "@/lib/cache";
 
 export async function GET(
   request: NextRequest,
@@ -12,9 +12,12 @@ export async function GET(
     // -----------------------------
     // 1️⃣ Try Redis Cache First
     // -----------------------------
-    const cached = await client.get(`product:${id}`);
+    const cached = await getCache(`product:${id}`);
     if (cached) {
-      return NextResponse.json(JSON.parse(cached), { status: 200 });
+      return NextResponse.json(
+        { success: true, product: JSON.parse(cached), source: "cache" },
+        { status: 200 }
+      );
     }
 
     // -----------------------------
@@ -25,7 +28,7 @@ export async function GET(
       include: {
         categories: {
           include: {
-            category: true, // get actual category object
+            category: true,
           },
         },
         threadAttributes: true,
@@ -36,7 +39,7 @@ export async function GET(
 
     if (!product) {
       return NextResponse.json(
-        { message: "Product not found" },
+        { success: false, message: "Product not found" },
         { status: 404 }
       );
     }
@@ -52,21 +55,19 @@ export async function GET(
     // -----------------------------
     // 4️⃣ Cache Product for 2 Minutes
     // -----------------------------
-    await client.set(
-      `product:${id}`,
-      JSON.stringify(normalizedProduct),
-      "EX",
-      120
-    );
+    await setCache(`product:${id}`, JSON.stringify(normalizedProduct), 120);
 
     // -----------------------------
     // 5️⃣ Send Response
     // -----------------------------
-    return NextResponse.json(normalizedProduct, { status: 200 });
-  } catch (error) {
-    console.error("Failed to fetch product:", error);
     return NextResponse.json(
-      { message: "An error occurred while fetching the product.", error },
+      { success: true, product: normalizedProduct, source: "db" },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("[Product API] Failed to fetch product:", error);
+    return NextResponse.json(
+      { success: false, message: "An error occurred while fetching the product." },
       { status: 500 }
     );
   }

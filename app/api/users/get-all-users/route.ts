@@ -1,5 +1,5 @@
 import { prisma } from "@/db/db.config";
-import { client } from "@/lib/Redis";
+import { getCache, setCache } from "@/lib/cache";
 import { NextResponse } from "next/server";
 
 /* ---------- Types ---------- */
@@ -10,23 +10,24 @@ export const GET = async (req: Request) => {
   try {
     const { searchParams } = new URL(req.url);
 
-    const page = Number(searchParams.get("page")) || 1;
-    const limit = Number(searchParams.get("limit")) || 10;
-    const search = searchParams.get("search") || "";
-    const role = searchParams.get("role"); // admin | user | null
-    const sortBy = (searchParams.get("sortBy") ||
-      "createdAt") as SortBy;
-    const sortOrder = (searchParams.get("sortOrder") ||
-      "desc") as SortOrder;
+    const page       = Math.max(1, Number(searchParams.get("page"))   || 1);
+    const limit      = Math.min(100, Math.max(1, Number(searchParams.get("limit")) || 10));
+    const search     = searchParams.get("search")    || "";
+    const role       = searchParams.get("role");
+    const sortBy     = (searchParams.get("sortBy")   || "createdAt") as SortBy;
+    const sortOrder  = (searchParams.get("sortOrder")|| "desc")      as SortOrder;
 
     const skip = (page - 1) * limit;
 
-    /* ---------- Redis Cache Key ---------- */
+    /* ---------- Redis Cache ---------- */
     const cacheKey = `users:${page}:${limit}:${search}:${role}:${sortBy}:${sortOrder}`;
 
-    const cachedUsers = await client.get(cacheKey);
-    if (cachedUsers) {
-      return NextResponse.json(JSON.parse(cachedUsers), { status: 200 });
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return NextResponse.json(
+        { ...JSON.parse(cached), source: "cache" },
+        { status: 200 }
+      );
     }
 
     /* ---------- Prisma Filters ---------- */
@@ -34,14 +35,13 @@ export const GET = async (req: Request) => {
 
     if (search) {
       where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
+        { name:  { contains: search, mode: "insensitive" } },
         { email: { contains: search, mode: "insensitive" } },
       ];
     }
 
-    if (role === "admin") where.role = "admin";
-    if (role === "user") where.role = "user";
-    if (role === "manager") where.role = "manager";
+    const validRoles = ["admin", "user", "manager"];
+    if (role && validRoles.includes(role)) where.role = role;
 
     /* ---------- Queries ---------- */
     const [users, total] = await Promise.all([
@@ -49,14 +49,12 @@ export const GET = async (req: Request) => {
         where,
         skip,
         take: limit,
-        orderBy: {
-          [sortBy]: sortOrder,
-        },
+        orderBy: { [sortBy]: sortOrder },
         select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
+          id:        true,
+          name:      true,
+          email:     true,
+          role:      true,
           createdAt: true,
           updatedAt: true,
         },
@@ -64,33 +62,26 @@ export const GET = async (req: Request) => {
       prisma.user.count({ where }),
     ]);
 
-    if (!users.length) {
-      return NextResponse.json(
-        {
-          users: [],
-          total,
-          page,
-          totalPages: Math.ceil(total / limit),
-        },
-        { status: 200 }
-      );
-    }
-
     const response = {
+      success:    true,
       users,
       total,
       page,
-      totalPages: Math.ceil(total / limit),
+      limit,
+      totalPages:  Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPrevPage: page > 1,
+      source:      "db",
     };
 
-    /* ---------- Cache Result ---------- */
-    await client.setex(cacheKey, 300, JSON.stringify(response));
+    /* ---------- Cache Result (5 min TTL) ---------- */
+    await setCache(cacheKey, JSON.stringify(response), 300);
 
     return NextResponse.json(response, { status: 200 });
   } catch (error) {
-    console.error("Failed to fetch users:", error);
+    console.error("[Users API] Failed to fetch users:", error);
     return NextResponse.json(
-      { message: "Internal Server Error" },
+      { success: false, message: "Internal Server Error" },
       { status: 500 }
     );
   }

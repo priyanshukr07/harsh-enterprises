@@ -17,21 +17,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ArrowUpDown, User2Icon } from "lucide-react";
+import { ArrowUpDown, User2Icon, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
-import {
-  useGetUsersQuery,
-  useToggleManagerRoleMutation,
-} from "@/providers/toolkit/features/GetAllUserSlice";
+import { useGetUsersQuery } from "@/providers/toolkit/features/GetAllUserSlice";
 import { useDebounce } from "@/providers/toolkit/hooks/useDebounce";
 import { useSession } from "next-auth/react";
 import { Role } from "@prisma/client";
+import { RoleSelector } from "@/app/_dashboardComponents/RoleSelector";
+import { useRoleChange } from "@/hooks/useRoleChange";
 
 /* ---------- Types ---------- */
 type SortBy = "createdAt" | "role" | "name" | "email";
@@ -49,7 +46,8 @@ const Usertable = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
-  const isCurrentUserAdmin = session?.user?.role === Role.ADMIN;
+
+  const currentUserRole = session?.user?.role ?? "USER";
 
   /* ---------- URL params ---------- */
   const sortByParam = searchParams.get("sortBy");
@@ -59,7 +57,7 @@ const Usertable = () => {
   const [page, setPage] = useState(Number(searchParams.get("page")) || 1);
 
   const [role, setRole] = useState<RoleFilter>(
-    ((searchParams.get("role") as RoleFilter) || "all") as RoleFilter
+    ((searchParams.get("role") as RoleFilter) || "all") as RoleFilter,
   );
 
   const [search, setSearch] = useState(searchParams.get("search") || "");
@@ -67,11 +65,11 @@ const Usertable = () => {
   const [sortBy, setSortBy] = useState<SortBy>(
     SORT_BY_VALUES.includes(sortByParam as SortBy)
       ? (sortByParam as SortBy)
-      : "createdAt"
+      : "createdAt",
   );
 
   const [sortOrder, setSortOrder] = useState<SortOrder>(
-    orderParam === "asc" || orderParam === "desc" ? orderParam : "desc"
+    orderParam === "asc" || orderParam === "desc" ? orderParam : "desc",
   );
 
   const debouncedSearch = useDebounce(search, 500);
@@ -79,19 +77,16 @@ const Usertable = () => {
   /* ---------- Sync URL ---------- */
   useEffect(() => {
     const params = new URLSearchParams();
-
     params.set("page", String(page));
     if (role !== "all") params.set("role", role);
     if (debouncedSearch) params.set("search", debouncedSearch);
-
     params.set("sortBy", sortBy);
     params.set("order", sortOrder);
-
     router.replace(`?${params.toString()}`);
   }, [page, role, debouncedSearch, sortBy, sortOrder, router]);
 
   /* ---------- API ---------- */
-  const { data, isFetching } = useGetUsersQuery({
+  const { data, isFetching, refetch } = useGetUsersQuery({
     page,
     limit: 10,
     search: debouncedSearch || undefined,
@@ -100,22 +95,10 @@ const Usertable = () => {
     sortOrder,
   });
 
-  const [toggleManagerRole] = useToggleManagerRoleMutation();
+  /* ---------- Role Change ---------- */
+  const { changeRole, loadingId } = useRoleChange(refetch);
 
   /* ---------- Handlers ---------- */
-  const handleToggle = async (userId: string, role: string) => {
-    if (session?.user?.id === userId && role === "admin") {
-      alert("You cannot remove your own admin access.");
-      return;
-    }
-    await toggleManagerRole({ userId });
-
-    if (role === "user") {
-      setRole("manager");
-      setPage(1);
-    }
-  };
-
   const handleSort = (column: SortBy) => {
     setSortBy(column);
     setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -189,54 +172,77 @@ const Usertable = () => {
                   Joined <ArrowUpDown className="ml-1 h-4 w-4" />
                 </Button>
               </TableHead>
-
-              <TableHead className="text-right">Admin</TableHead>
             </TableRow>
           </TableHeader>
 
           <TableBody>
-            {data?.users?.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell className="flex items-center gap-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback>
-                      {user.name?.[0]?.toUpperCase() ?? "U"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="font-medium text-sm">
-                    {user.name || "Unnamed"}
-                  </span>
-                </TableCell>
-
-                <TableCell className="text-muted-foreground">
-                  {user.email}
-                </TableCell>
-
-                <TableCell>
-                  <Badge variant={user.role === "ADMIN" ? "primary" : user.role === "MANAGER" ? "secondary" : "default"}>
-                    {user.role === "ADMIN" ? "Admin" : user.role === "MANAGER" ? "Manager" : "User"}
-                  </Badge>
-                </TableCell>
-
-                <TableCell className="text-xs text-muted-foreground">
-                  {formatDistanceToNow(new Date(user.createdAt), {
-                    addSuffix: true,
-                  })}
-                </TableCell>
-
-                <TableCell className="text-right">
-                  <Switch
-                    checked={user.role === "ADMIN"}
-                    disabled={!isCurrentUserAdmin}
-                    onCheckedChange={() => handleToggle(user.id, user.role)}
-                  />
-                </TableCell>
-              </TableRow>
-            ))}
-
-            {!isFetching && !data?.users?.length && (
+            {/* Loading skeleton */}
+            {isFetching && (
               <TableRow>
                 <TableCell colSpan={5} className="text-center py-6">
+                  <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
+                </TableCell>
+              </TableRow>
+            )}
+
+            {/* Users */}
+            {!isFetching &&
+              data?.users
+                ?.filter(
+                  (user) => role === "all" || user.role.toLowerCase() === role,
+                )
+                .map((user) => (
+                  <TableRow key={user.id}>
+                    {/* Name + Avatar */}
+                    <TableCell className="flex items-center gap-3">
+                      <Avatar className="h-8 w-8">
+                        <AvatarFallback>
+                          {user.name?.[0]?.toUpperCase() ?? "U"}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex flex-col">
+                        <span className="font-medium text-sm">
+                          {user.name || "Unnamed"}
+                        </span>
+                        {user.id === session?.user?.id && (
+                          <span className="text-xs text-muted-foreground italic">
+                            You
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+
+                    {/* Email */}
+                    <TableCell className="text-muted-foreground">
+                      {user.email}
+                    </TableCell>
+
+                    {/* Role Badge */}
+                    <TableCell>
+                      <RoleSelector
+                        targetUser={{ id: user.id, role: user.role }}
+                        currentUserRole={currentUserRole}
+                        onRoleChange={changeRole}
+                        loading={loadingId === user.id}
+                      />
+                    </TableCell>
+
+                    {/* Joined */}
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(new Date(user.createdAt), {
+                        addSuffix: true,
+                      })}
+                    </TableCell>
+                  </TableRow>
+                ))}
+
+            {/* Empty state */}
+            {!isFetching && !data?.users?.length && (
+              <TableRow>
+                <TableCell
+                  colSpan={5}
+                  className="text-center py-6 text-muted-foreground"
+                >
                   No users found
                 </TableCell>
               </TableRow>
@@ -244,16 +250,17 @@ const Usertable = () => {
           </TableBody>
         </Table>
 
+        {/* Pagination */}
         {data && data.totalPages > 1 && (
           <div className="flex justify-between items-center mt-6">
             <span className="text-sm text-muted-foreground">
-              Page {data.page} of {data.totalPages}
+              Page {data.page} of {data.totalPages} ({data.total} users)
             </span>
             <div className="flex gap-2">
               <Button
                 size="sm"
                 variant="outline"
-                disabled={page === 1}
+                disabled={page === 1 || isFetching}
                 onClick={() => setPage((p) => p - 1)}
               >
                 Previous
@@ -261,7 +268,7 @@ const Usertable = () => {
               <Button
                 size="sm"
                 variant="outline"
-                disabled={page === data.totalPages}
+                disabled={page === data.totalPages || isFetching}
                 onClick={() => setPage((p) => p + 1)}
               >
                 Next

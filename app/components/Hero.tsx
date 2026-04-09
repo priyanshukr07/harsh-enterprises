@@ -34,7 +34,6 @@ export default function Hero() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-28">
         <div className="grid lg:grid-cols-7 gap-10 items-center">
 
-          {/* Text */}
           <motion.div
             className="lg:col-span-3 space-y-6"
             initial={{ opacity: 0, y: 30 }}
@@ -43,8 +42,8 @@ export default function Hero() {
           >
             <span className="
               inline-block rounded-full px-4 py-1 text-sm font-medium
-              bg-green-100 text-green-700
-              dark:bg-green-900/40 dark:text-green-300
+              bg-green-200 text-green-800
+              dark:bg-green-900/40 dark:text-green-800
             ">
               Trusted Agricultural Supplies
             </span>

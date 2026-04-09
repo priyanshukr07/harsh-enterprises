@@ -53,9 +53,9 @@ export default function Categories() {
           className="text-center mb-16"
         >
           <span className="
-            inline-block mb-4 rounded-full px-4 py-1 text-sm font-medium
-            bg-green-100 text-green-700
-            dark:bg-green-900/40 dark:text-green-300
+            inline-block rounded-full px-4 py-1 mb-2.5 text-sm font-medium
+              bg-green-200 text-green-800
+              dark:bg-green-900/40 dark:text-green-800
           ">
             Product Categories
           </span>

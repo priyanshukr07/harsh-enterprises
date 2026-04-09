@@ -7,82 +7,65 @@ export const dynamic = "force-dynamic";
 /* -------------------------------------------------------
    Imports
 ------------------------------------------------------- */
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/db/db.config";
-import { client } from "@/lib/Redis";
-
-/* -------------------------------------------------------
-   Cache helpers (SAFE, NON-FATAL)
-------------------------------------------------------- */
-async function getProductsFromCache() {
-  try {
-    if (!client) return null;
-
-    const cache = await client.get("products");
-    if (!cache) return null;
-
-    return JSON.parse(cache);
-  } catch (err) {
-    console.warn("[Products API] Redis read failed");
-    return null;
-  }
-}
-
-async function setProductsToCache(products: unknown[]) {
-  try {
-    if (!client) return;
-
-    await client.set(
-      "products",
-      JSON.stringify(products),
-      "EX",
-      120 // 2 minutes TTL
-    );
-  } catch (err) {
-    console.warn("[Products API] Redis write failed");
-  }
-}
+import { getCache, setCache } from "@/lib/cache";
 
 /* -------------------------------------------------------
    DB fetch + normalization
 ------------------------------------------------------- */
-async function fetchProductsFromDB() {
-  const products = await prisma.product.findMany({
-    include: {
-      categories: {
-        include: {
-          category: true,
+async function fetchProductsFromDB(page: number, limit: number) {
+  const skip = (page - 1) * limit;
+
+  const [products, total] = await Promise.all([
+    prisma.product.findMany({
+      skip,
+      take: limit,
+      include: {
+        categories: {
+          include: {
+            category: true,
+          },
         },
+        threadAttributes: true,
+        cocopeatAttributes: true,
+        trayAttributes: true,
       },
-      threadAttributes: true,
-      cocopeatAttributes: true,
-      trayAttributes: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
+      orderBy: {
+        createdAt: "desc",
+      },
+    }),
+    prisma.product.count(),
+  ]);
 
   // Normalize pivot table → clean category array
-  return products.map((p) => ({
+  const normalized = products.map((p) => ({
     ...p,
     categories: p.categories.map((pc) => pc.category),
   }));
+
+  return { products: normalized, total };
 }
 
 /* -------------------------------------------------------
    GET handler
 ------------------------------------------------------- */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const { searchParams } = new URL(req.url);
+    const page  = Math.max(1, parseInt(searchParams.get("page")  ?? "1"));
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "20")));
+
+    const cacheKey = `products:page=${page}:limit=${limit}`;
+
     // 1️⃣ Attempt cache
-    const cachedProducts = await getProductsFromCache();
-    if (cachedProducts) {
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
       return NextResponse.json(
         {
           success: true,
-          products: cachedProducts,
-          total: cachedProducts.length,
+          ...parsed,
           source: "cache",
         },
         { status: 200 }
@@ -90,16 +73,25 @@ export async function GET() {
     }
 
     // 2️⃣ Fallback to DB
-    const products = await fetchProductsFromDB();
+    const { products, total } = await fetchProductsFromDB(page, limit);
 
-    // 3️⃣ Update cache (even if empty — prevents DB hammering)
-    await setProductsToCache(products);
+    const payload = {
+      products,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPrevPage: page > 1,
+    };
+
+    // 3️⃣ Update cache (120s TTL)
+    await setCache(cacheKey, JSON.stringify(payload), 120);
 
     return NextResponse.json(
       {
         success: true,
-        products,          // [] if none
-        total: products.length,
+        ...payload,
         source: "db",
       },
       { status: 200 }

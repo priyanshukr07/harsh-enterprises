@@ -1,6 +1,6 @@
 import { prisma } from "@/db/db.config";
 import { NextRequest, NextResponse } from "next/server";
-import { client } from "@/lib/Redis";
+import { deleteCache, deleteCacheByPattern } from "@/lib/cache";
 
 export const DELETE = async (req: NextRequest) => {
   try {
@@ -8,7 +8,7 @@ export const DELETE = async (req: NextRequest) => {
 
     if (!productId) {
       return NextResponse.json(
-        { message: "Product ID is required" },
+        { success: false, message: "Product ID is required" },
         { status: 400 }
       );
     }
@@ -22,54 +22,44 @@ export const DELETE = async (req: NextRequest) => {
 
     if (!product) {
       return NextResponse.json(
-        { message: "Product not found" },
+        { success: false, message: "Product not found" },
         { status: 404 }
       );
     }
 
     // ----------------------------------
-    // 2️⃣ Delete related attributes
+    // 2️⃣ Delete related records in parallel
     // ----------------------------------
-    await prisma.threadAttributes.deleteMany({
-      where: { productId },
-    });
-
-    await prisma.cocopeatAttributes.deleteMany({
-      where: { productId },
-    });
-
-    await prisma.trayAttributes.deleteMany({
-      where: { productId },
-    });
+    await Promise.all([
+      prisma.threadAttributes.deleteMany({ where: { productId } }),
+      prisma.cocopeatAttributes.deleteMany({ where: { productId } }),
+      prisma.trayAttributes.deleteMany({ where: { productId } }),
+      prisma.productCategory.deleteMany({ where: { productId } }),
+    ]);
 
     // ----------------------------------
-    // 3️⃣ Delete join-table entries (ProductCategory)
-    // ----------------------------------
-    await prisma.productCategory.deleteMany({
-      where: { productId },
-    });
-
-    // ----------------------------------
-    // 4️⃣ Delete the product
+    // 3️⃣ Delete the product
     // ----------------------------------
     await prisma.product.delete({
       where: { id: productId },
     });
 
     // ----------------------------------
-    // 5️⃣ Invalidate Redis cache
+    // 4️⃣ Invalidate Redis cache (SAFE)
     // ----------------------------------
-    await client.del("products");
-    await client.del(`product:${productId}`);
+    await Promise.all([
+      deleteCache(`product:${productId}`),        // single product key
+      deleteCacheByPattern("products:page=*"),    // all paginated list keys
+    ]);
 
     return NextResponse.json(
-      { message: "Product and related data deleted successfully" },
+      { success: true, message: "Product deleted successfully" },
       { status: 200 }
     );
   } catch (error) {
-    console.error("DELETE PRODUCT ERROR:", error);
+    console.error("[Delete Product API] Error:", error);
     return NextResponse.json(
-      { message: "Something went wrong", error },
+      { success: false, message: "Something went wrong" },
       { status: 500 }
     );
   }

@@ -41,7 +41,11 @@ export default function Category() {
           transition={{ duration: 0.6 }}
           className="text-center mb-16"
         >
-          <span className="inline-block mb-4 rounded-full px-4 py-1 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
+          <span
+            className="inline-block rounded-full px-4 py-1 mb-2.5 text-sm font-medium
+              bg-green-200 text-green-800
+              dark:bg-green-900/40 dark:text-green-800"
+          >
             Product Categories
           </span>
 
@@ -53,7 +57,8 @@ export default function Category() {
           </h2>
 
           <p className="text-lg max-w-3xl mx-auto text-muted-foreground">
-            Explore our agricultural essentials trusted by nurseries and farmers.
+            Explore our agricultural essentials trusted by nurseries and
+            farmers.
           </p>
         </motion.div>
 
@@ -66,9 +71,10 @@ export default function Category() {
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: i * 0.1 }}
             >
-              <Link href={cat.link} className="group block">
-                <div className="rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-all">
-                  <div className="relative aspect-4/3 overflow-hidden">
+              <Link href={cat.link} className="group block h-full">
+                <div className="rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-all h-full flex flex-col">
+                  
+                  <div className="relative h-56 w-full overflow-hidden flex-shrink-0">
                     <Image
                       src={cat.image}
                       alt={cat.label}
@@ -76,14 +82,16 @@ export default function Category() {
                       sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                       className="object-cover group-hover:scale-105 transition-transform duration-500"
                     />
-                    <div className="absolute inset-0 bg-linear-to-t from-black/60 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                   </div>
 
-                  <div className="p-6">
-                    <h3 className="text-2xl font-bold mb-2">{cat.label}</h3>
-                    <p className="text-muted-foreground mb-4">
-                      {cat.description}
-                    </p>
+                  <div className="p-6 flex flex-col justify-between flex-1">
+                    <div>
+                      <h3 className="text-2xl font-bold mb-2">{cat.label}</h3>
+                      <p className="text-muted-foreground mb-4 line-clamp-2">
+                        {cat.description}
+                      </p>
+                    </div>
                     <span className="font-semibold text-green-600">
                       Explore Products →
                     </span>

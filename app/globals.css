@@ -1,5 +1,40 @@
 @import "tailwindcss";
 
+@theme {
+  --color-background:             hsl(var(--background));
+  --color-foreground:             hsl(var(--foreground));
+
+  --color-card:                   hsl(var(--card));
+  --color-card-foreground:        hsl(var(--card-foreground));
+
+  --color-popover:                hsl(var(--popover));
+  --color-popover-foreground:     hsl(var(--popover-foreground));
+
+  --color-primary:                hsl(var(--primary));
+  --color-primary-foreground:     hsl(var(--primary-foreground));
+
+  --color-secondary:              hsl(var(--secondary));
+  --color-secondary-foreground:   hsl(var(--secondary-foreground));
+
+  --color-muted:                  hsl(var(--muted));
+  --color-muted-foreground:       hsl(var(--muted-foreground));
+
+  --color-accent:                 hsl(var(--accent));
+  --color-accent-foreground:      hsl(var(--accent-foreground));
+
+  --color-destructive:            hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-border:                 hsl(var(--border));
+  --color-input:                  hsl(var(--input));
+  --color-ring:                   hsl(var(--ring));
+
+  --radius-sm:                    calc(var(--radius) - 4px);
+  --radius-md:                    calc(var(--radius) - 2px);
+  --radius-lg:                    var(--radius);
+  --radius-xl:                    calc(var(--radius) + 4px);
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -65,28 +100,28 @@
 }
 
 @layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
   }
 }
 
-/* Updated CSS for a subtler glow effect */
+   /* Glowing text */
 .glowing-text {
-  color: #f0e68c; /* Light golden text color */
-  text-shadow: 0 0 3px #ffd700, 0 0 6px #ff8c00; /* Reduced glow */
+  color: #f0e68c;
+  text-shadow: 0 0 3px #ffd700, 0 0 6px #ff8c00;
   animation: glow 1s ease-in-out infinite alternate;
 }
 
 @keyframes glow {
-  from {
-    text-shadow: 0 0 3px #ffd700, 0 0 6px #ff8c00;
-  }
-  to {
-    text-shadow: 0 0 5px #ffa500, 0 0 10px #ff4500; /* Subtler glow transition */
-  }
+  from { text-shadow: 0 0 3px #ffd700, 0 0 6px #ff8c00; }
+  to   { text-shadow: 0 0 5px #ffa500, 0 0 10px #ff4500; }
 }
 
+   /* Form styles */
 .form-container {
   background: rgba(255, 255, 255, 0.5);
   backdrop-filter: blur(10px);
@@ -100,16 +135,11 @@
   box-shadow: 0 4px 16px rgba(31, 38, 135, 0.25);
 }
 
+   /* Moving gradient */
 @keyframes moveBackground {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
 .movingGradient {
@@ -118,6 +148,7 @@
   animation: moveBackground 10s ease infinite;
 }
 
+   /* Truck loader */
 .loader {
   width: fit-content;
   height: fit-content;
@@ -136,26 +167,20 @@
   justify-content: flex-end;
   overflow-x: hidden;
 }
-/* truck upper body */
+
 .truckBody {
   width: 130px;
   height: fit-content;
   margin-bottom: 6px;
   animation: motion 1s linear infinite;
 }
-/* truck suspension animation*/
+
 @keyframes motion {
-  0% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(3px);
-  }
-  100% {
-    transform: translateY(0px);
-  }
+  0%   { transform: translateY(0px); }
+  50%  { transform: translateY(3px); }
+  100% { transform: translateY(0px); }
 }
-/* truck's tires */
+
 .truckTires {
   width: 130px;
   height: fit-content;
@@ -166,6 +191,7 @@
   position: absolute;
   bottom: 0;
 }
+
 .truckTires svg {
   width: 24px;
 }
@@ -179,6 +205,7 @@
   align-self: flex-end;
   border-radius: 3px;
 }
+
 .road::before {
   content: "";
   position: absolute;
@@ -190,6 +217,7 @@
   animation: roadAnimation 1.4s linear infinite;
   border-left: 10px solid white;
 }
+
 .road::after {
   content: "";
   position: absolute;
@@ -211,10 +239,6 @@
 }
 
 @keyframes roadAnimation {
-  0% {
-    transform: translateX(0px);
-  }
-  100% {
-    transform: translateX(-350px);
-  }
+  0%   { transform: translateX(0px); }
+  100% { transform: translateX(-350px); }
 }

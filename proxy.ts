@@ -11,24 +11,31 @@ export async function proxy(req: NextRequest) {
 
   const { pathname } = req.nextUrl;
 
-  /* ---------- LOGIN PAGE ---------- */
+  /*  LOGIN PAGE  */
   if (pathname === "/login" && token) {
     return NextResponse.redirect(new URL("/", req.url));
   }
 
-  /* ---------- AUTH-PROTECTED ROUTES ---------- */
+  /*  AUTH-PROTECTED ROUTES  */
   const protectedRoutes = ["/cart", "/order", "/checkout", "/dashboard"];
 
   if (protectedRoutes.some((route) => pathname.startsWith(route)) && !token) {
-    return NextResponse.redirect(new URL("/login", req.url));
+    const loginUrl = new URL("/login", req.url);
+    loginUrl.searchParams.set("callbackUrl", pathname);
+    return NextResponse.redirect(loginUrl);
   }
 
-  /* ---------- ADMIN GUARD ---------- */
-  if (pathname.startsWith("/dashboard") && !token?.role?.includes("ADMIN")) {
-    return NextResponse.redirect(new URL("/", req.url));
+  /*  DASHBOARD GUARD  */
+  if (pathname.startsWith("/dashboard")) {
+    const role = token?.role as string | undefined;
+    const isAllowed = role === "ADMIN" || role === "MANAGER";
+
+    if (!isAllowed) {
+      return NextResponse.redirect(new URL("/", req.url));
+    }
   }
 
-  /* ---------- ALLOW ---------- */
+  /*  ALLOW  */
   return NextResponse.next();
 }
 

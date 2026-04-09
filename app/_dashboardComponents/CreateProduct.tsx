@@ -12,24 +12,34 @@ import {
   Upload,
   Image as ImageIcon,
 } from "lucide-react";
+import { useAppDispatch } from "@/providers/toolkit/hooks/hooks";
+import { CreatePro } from "@/providers/toolkit/features/CreateProductSlice";
+import { useSession } from "next-auth/react";
 
-interface ImageUploadProps {
+interface ImageUploadBoxProps {
+  value?: string; // current image url (main OR last uploaded)
   onUpload: (url: string) => void;
-  preview?: string;
+  onDelete?: (url: string) => void;
 }
 
-const ImageUpload: React.FC<ImageUploadProps> = ({ onUpload, preview }) => {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(preview || null);
-  const [isUploading, setIsUploading] = useState(false);
+export function ImageUploadBox({
+  value,
+  onUpload,
+  onDelete,
+}: ImageUploadBoxProps) {
   const inputId = useId();
+  const [isUploading, setIsUploading] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
 
-  const handleFileSelect = async (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = event.target.files?.[0];
+  const handleSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
-    setPreviewUrl(URL.createObjectURL(file));
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Max file size is 5MB");
+      return;
+    }
+
     setIsUploading(true);
 
     try {
@@ -41,81 +51,104 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onUpload, preview }) => {
         body: formData,
       });
 
-      if (!res.ok) {
-        alert("Upload failed");
-        setIsUploading(false);
-        return;
-      }
+      if (!res.ok) throw new Error("Upload failed");
 
       const data = await res.json();
       onUpload(data.url);
-    } catch (error) {
-      console.error(error);
-      alert("Something went wrong while uploading.");
+    } catch (err) {
+      alert("Image upload failed");
     } finally {
       setIsUploading(false);
     }
   };
 
-  useEffect(() => {
-    if (preview) setPreviewUrl(preview);
-  }, [preview]);
+  const handleDelete = async () => {
+    if (!value) return;
+
+    try {
+      await fetch("/api/upload/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: value }),
+      });
+
+      onDelete?.(value);
+    } catch {
+      alert("Failed to delete image");
+    }
+  };
 
   return (
-    <div className="relative w-full bg-background text-foreground">
+    <div
+      className="relative w-37.5 h-37.5"
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => setIsHovering(false)}
+    >
       <input
         type="file"
         accept="image/*"
-        onChange={handleFileSelect}
-        className="hidden"
         id={inputId}
+        className="hidden"
+        onChange={handleSelect}
       />
 
       <label
         htmlFor={inputId}
         className="
-        group
-        flex flex-col items-center justify-center
-        w-full
-        min-h-[180px]
-        rounded-xl
-        border-2 border-dashed border-border
-        bg-card
-        cursor-pointer
-        transition-all
-        hover:border-green-500
-        focus-within:ring-2 focus-within:ring-green-500/60
-      "
+          relative w-full h-full
+          rounded-xl border-2 border-dashed
+          border-slate-300 dark:border-slate-600
+          overflow-hidden cursor-pointer
+          flex items-center justify-center
+          bg-slate-50 dark:bg-slate-900
+        "
       >
-        {previewUrl ? (
-          <div className="relative w-full h-full p-2">
-            <img
-              src={previewUrl}
-              alt="Preview"
-              className="w-full h-full object-cover rounded-lg"
-            />
+        {/* IMAGE PREVIEW */}
+        {value && (
+          <img
+            src={value}
+            alt="preview"
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+        )}
 
-            {isUploading && (
-              <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm">
-                <span className="text-sm font-medium text-foreground">
-                  Uploading…
-                </span>
-              </div>
-            )}
+        {/* HOVER OVERLAY */}
+        {(isHovering || !value) && (
+          <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-white text-xs font-medium transition">
+            <Upload className="w-5 h-5 mb-1" />
+            Click to upload
           </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center gap-2 py-6">
-            <Upload className="w-9 h-9 text-muted-foreground group-hover:text-green-500 transition-colors" />
-            <p className="text-sm text-muted-foreground">
-              {isUploading ? "Uploading…" : "Click to upload image"}
-            </p>
-            <p className="text-xs text-muted-foreground">PNG, JPG up to 5MB</p>
+        )}
+
+        {/* UPLOADING OVERLAY */}
+        {isUploading && (
+          <div className="absolute inset-0 bg-black/70 flex items-center justify-center text-white text-xs animate-pulse">
+            Uploading…
           </div>
         )}
       </label>
+
+      {/* DELETE BUTTON */}
+      {value && (
+        <button
+          type="button"
+          onClick={handleDelete}
+          className="
+            absolute top-1 right-1
+            w-5 h-5 rounded-full
+            bg-red-600 text-white
+            flex items-center justify-center
+            text-sm font-bold
+            hover:bg-red-700
+          "
+          title="Delete image"
+        >
+          x
+        </button>
+      )}
     </div>
   );
-};
+}
 
 const CreateProduct = () => {
   const [name, setName] = useState<string>("");
@@ -162,6 +195,9 @@ const CreateProduct = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  const dispatch = useAppDispatch();
+  const { data: session } = useSession();
+
   const productTypes = useMemo(
     () => [
       { id: "threads", label: "Threads" },
@@ -196,14 +232,6 @@ const CreateProduct = () => {
   const removeImage = (index: number) => {
     setOtherImages(otherImages.filter((_, i) => i !== index));
   };
-
-  // const toggleCategory = (catId: string) => {
-  //   if (categories.includes(catId)) {
-  //     setCategories(categories.filter((id) => id !== catId));
-  //   } else {
-  //     setCategories([...categories, catId]);
-  //   }
-  // };
 
   useEffect(() => {
     if (categoryType !== "threads") {
@@ -266,130 +294,92 @@ const CreateProduct = () => {
     const t = setTimeout(() => setSuccess(""), 4000);
     return () => clearTimeout(t);
   }, [success]);
+  const buildCreateProductPayload = () => {
+    const payload: any = {
+      name,
+      description,
+      price: parseFloat(price),
+      mainImage,
+      otherImages,
+      quantity: parseInt(quantity),
+      sizes,
+      categoryType,
+      userId: session?.user?.id,
+    };
+
+    if (categoryType === "threads") {
+      Object.assign(payload, {
+        colors,
+        denier,
+        length: length ? parseFloat(length) : undefined,
+        material,
+        plyCount: plyCount ? parseInt(plyCount) : undefined,
+        spoolWeight: spoolWeight ? parseFloat(spoolWeight) : undefined,
+        strength: strength ? parseFloat(strength) : undefined,
+      });
+    }
+
+    if (categoryType === "cocopeat") {
+      Object.assign(payload, {
+        weight: weight ? parseFloat(weight) : undefined,
+        ecLevel,
+        compression,
+        moisture: moisture ? parseFloat(moisture) : undefined,
+        ph: ph ? parseFloat(ph) : undefined,
+        expansion: expansion ? parseFloat(expansion) : undefined,
+        grade,
+      });
+    }
+
+    if (categoryType === "seedling-tray") {
+      Object.assign(payload, {
+        cavities: cavities ? parseInt(cavities) : undefined,
+        cellVolume: cellVolume ? parseInt(cellVolume) : undefined,
+        trayMaterial,
+        dimensions,
+        thickness: thickness ? parseFloat(thickness) : undefined,
+        rows: rows ? parseInt(rows) : undefined,
+        columns: columns ? parseInt(columns) : undefined,
+      });
+    }
+
+    return payload;
+  };
 
   const handleSubmit = async () => {
-    setLoading(true);
     setError("");
     setSuccess("");
 
-    // Validation
+    // Basic validation
     if (
       !name ||
       !description ||
       !price ||
       !mainImage ||
       !quantity ||
-      !categories.length ||
       !categoryType
     ) {
       setError("Please fill all required fields");
-      setLoading(false);
       return;
     }
 
     try {
-      const payload: any = {
-        name,
-        description,
-        price: parseFloat(price),
-        mainImage,
-        otherImages,
-        quantity: parseInt(quantity),
-        sizes,
-        userId: "USER_ID_HERE",
-        categories,
-        categoryType,
-      };
+      setLoading(true);
 
-      if (categoryType === "threads") {
-        payload.colors = colors;
-      }
+      const payload = buildCreateProductPayload();
 
-      if (categoryType === "threads") {
-        Object.assign(payload, {
-          denier,
-          length: length ? parseFloat(length) : undefined,
-          material,
-          plyCount: plyCount ? parseInt(plyCount) : undefined,
-          spoolWeight: spoolWeight ? parseFloat(spoolWeight) : undefined,
-          strength: strength ? parseFloat(strength) : undefined,
-        });
-      } else if (categoryType === "cocopeat") {
-        Object.assign(payload, {
-          weight: weight ? parseFloat(weight) : undefined,
-          ecLevel,
-          compression,
-          moisture: moisture ? parseFloat(moisture) : undefined,
-          ph: ph ? parseFloat(ph) : undefined,
-          expansion: expansion ? parseFloat(expansion) : undefined,
-          grade,
-        });
-      } else if (categoryType === "seedling-tray") {
-        Object.assign(payload, {
-          cavities: cavities ? parseInt(cavities) : undefined,
-          cellVolume: cellVolume ? parseInt(cellVolume) : undefined,
-          trayMaterial,
-          dimensions,
-          thickness: thickness ? parseFloat(thickness) : undefined,
-          rows: rows ? parseInt(rows) : undefined,
-          columns: columns ? parseInt(columns) : undefined,
-        });
-      }
+      // 🔥 Redux async thunk call
+      const result = await dispatch(CreatePro(payload)).unwrap();
 
-      const response = await fetch("/api/products", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to create product");
-      }
-
+      // If we reach here → success
       setSuccess("Product created successfully!");
       localStorage.removeItem("product-draft");
 
-      // Reset form
-      setName("");
-      setDescription("");
-      setPrice("");
-      setMainImage("");
-      setOtherImages([]);
-      setQuantity("");
-      setSizes([]);
-      setColors([]);
-      setCategories([]);
-      setCategoryType("");
-
-      // Clear attributes
-      setDenier("");
-      setLength("");
-      setMaterial("");
-      setPlyCount("");
-      setSpoolWeight("");
-      setStrength("");
-      setWeight("");
-      setEcLevel("");
-      setCompression("");
-      setMoisture("");
-      setPh("");
-      setExpansion("");
-      setGrade("");
-      setCavities("");
-      setCellVolume("");
-      setTrayMaterial("");
-      setDimensions("");
-      setThickness("");
-      setRows("");
-      setColumns("");
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError(String(err));
-      }
+      // Reset form (same as before)
+      handleStartOver();
+    } catch (err: any) {
+      // Centralized error handling
+      setError(err?.message || "Failed to create product");
     } finally {
       setLoading(false);
     }
@@ -675,49 +665,56 @@ const CreateProduct = () => {
           Product Images
         </h2>
         <div className="flex flex-col md:flex-row gap-4">
-        <div className="flex-1 mr-4">
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-            Main Image *
-          </label>
-          <ImageUpload
-            onUpload={(url) => setMainImage(url)}
-            preview={mainImage}
-          />
-          {mainImage && (
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 truncate">
-              {mainImage}
-            </p>
-          )}
-        </div>
-        <div className="flex-1">
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-            Additional Images
-          </label>
-          <ImageUpload
-            onUpload={(url) => setOtherImages([...otherImages, url])}
-          />
-          <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-            {otherImages.map((img, index) => (
-              <div
-                key={index}
-                className="relative group aspect-square rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700"
-              >
-                <img
-                  src={img}
-                  alt={`Additional ${index + 1}`}
-                  className="w-full h-full object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeImage(index)}
-                  className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
+          <div className="flex-1 mr-4">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+              Main Image *
+            </label>
+            <ImageUploadBox
+              value={mainImage}
+              onUpload={(url) => setMainImage(url)}
+              onDelete={() => setMainImage("")}
+            />
+
+            {/* {mainImage && (
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 truncate">
+                {mainImage}
+              </p>
+            )} */}
           </div>
-        </div>
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+              Additional Images
+            </label>
+            <ImageUploadBox
+              value={otherImages.at(-1)}
+              onUpload={(url) => setOtherImages((prev) => [...prev, url])}
+              onDelete={(url) =>
+                setOtherImages((prev) => prev.filter((img) => img !== url))
+              }
+            />
+
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+              {otherImages.map((img, index) => (
+                <div
+                  key={index}
+                  className="relative group aspect-square rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700"
+                >
+                  <img
+                    src={img}
+                    alt={`Additional ${index + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(index)}
+                    className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
